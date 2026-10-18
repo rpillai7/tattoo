@@ -55,8 +55,8 @@ window.onunhandledrejection=e=>window.onerror((e.reason&&e.reason.message)||Stri
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
 // 1) PASTE YOUR SUPABASE VALUES HERE (Project Settings > API)
-const SUPABASE_URL = 'PASTE_YOUR_PROJECT_URL';
-const SUPABASE_ANON_KEY = 'PASTE_YOUR_ANON_PUBLIC_KEY';
+const SUPABASE_URL = 'https://zxczjxbddfwkqsuqozwk.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_WWXQHAQPKckr_0CaTf08Ug_YSo0EsCV';
 
 const sb = supabase.createClient(SUPABASE_URL.trim(), SUPABASE_ANON_KEY.trim());
 const $ = s => document.querySelector(s), app = $('#app'), nav = $('#nav');
