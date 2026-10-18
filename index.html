@@ -17,6 +17,8 @@ a{color:inherit}
 .tabs a.on{background:var(--acc);color:var(--accfg)}
 main{max-width:1100px;margin:0 auto;padding:20px}
 .box{max-width:420px;margin:30px auto}
+.auth{margin-top:18vh}
+.auth h2{text-align:center}
 .box form,label{display:flex;flex-direction:column;gap:6px}
 .box form{gap:12px}
 label{font-size:14px;color:var(--mut)}
@@ -53,8 +55,8 @@ window.onunhandledrejection=e=>window.onerror((e.reason&&e.reason.message)||Stri
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
 // 1) PASTE YOUR SUPABASE VALUES HERE (Project Settings > API)
-const SUPABASE_URL = 'https://zxczjxbddfwkqsuqozwk.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_WWXQHAQPKckr_0CaTf08Ug_YSo0EsCV';
+const SUPABASE_URL = 'PASTE_YOUR_PROJECT_URL';
+const SUPABASE_ANON_KEY = 'PASTE_YOUR_ANON_PUBLIC_KEY';
 
 const sb = supabase.createClient(SUPABASE_URL.trim(), SUPABASE_ANON_KEY.trim());
 const $ = s => document.querySelector(s), app = $('#app'), nav = $('#nav');
@@ -118,7 +120,7 @@ function renderNav(page) {
 
 // ---------- Auth ----------
 function viewLogin() {
-  app.innerHTML = `<div class="box"><h2>Log in</h2><form id="f"><input name="email" type="email" placeholder="Email" required><input name="password" type="password" placeholder="Password" required><button>Log in</button><p class="err" id="err"></p></form><p class="mut">No account? <a href="#/signup">Sign up</a></p></div>`;
+  app.innerHTML = `<div class="box auth"><h2>Log in</h2><form id="f"><input name="email" type="email" placeholder="Email" required><input name="password" type="password" placeholder="Password" required><button>Log in</button><p class="err" id="err"></p></form><p class="mut">No account? <a href="#/signup">Sign up</a></p></div>`;
   $('#f').onsubmit = async e => {
     e.preventDefault(); const f = new FormData(e.target);
     const { error } = await sb.auth.signInWithPassword({ email: f.get('email'), password: f.get('password') });
@@ -128,7 +130,7 @@ function viewLogin() {
 }
 
 function viewSignup() {
-  app.innerHTML = `<div class="box"><h2>Create account</h2><form id="f"><input name="name" placeholder="Display name" required><input name="email" type="email" placeholder="Email" required><input name="password" type="password" placeholder="Password (6+ characters)" minlength="6" required>
+  app.innerHTML = `<div class="box auth"><h2>Create account</h2><form id="f"><input name="name" placeholder="Display name" required><input name="email" type="email" placeholder="Email" required><input name="password" type="password" placeholder="Password (6+ characters)" minlength="6" required>
   <div class="radios"><label><input type="radio" name="role" value="user" checked> I am a user</label><label><input type="radio" name="role" value="artist"> I am a tattoo artist</label></div>
   <button>Sign up</button><p class="err" id="err"></p></form><p class="mut">Have an account? <a href="#/login">Log in</a></p></div>`;
   $('#f').onsubmit = async e => {
