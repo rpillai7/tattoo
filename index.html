@@ -44,7 +44,11 @@ button.sec{background:var(--card);color:var(--fg);border:1px solid var(--line)}
 </head>
 <body>
 <div id="nav"></div>
-<main id="app"></main>
+<main id="app"><p style="padding:20px">Loading...</p></main>
+<script>
+window.onerror=(m,s,l)=>{document.getElementById('app').innerHTML='<div style="max-width:600px;margin:30px auto;padding:16px;border:1px solid #b00020;border-radius:8px"><b>Something went wrong</b><p>'+String(m).replace(/</g,'&lt;')+' (line '+l+')</p><p>Common causes: curly quotes instead of straight quotes around your Supabase URL or key, or no internet connection (the Supabase library could not load).</p></div>'};
+window.onunhandledrejection=e=>window.onerror((e.reason&&e.reason.message)||String(e.reason),'',0);
+</script>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
@@ -52,7 +56,7 @@ button.sec{background:var(--card);color:var(--fg);border:1px solid var(--line)}
 const SUPABASE_URL = 'https://zxczjxbddfwkqsuqozwk.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_WWXQHAQPKckr_0CaTf08Ug_YSo0EsCV';
 
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = supabase.createClient(SUPABASE_URL.trim(), SUPABASE_ANON_KEY.trim());
 const $ = s => document.querySelector(s), app = $('#app'), nav = $('#nav');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const url = u => /^https?:\/\//i.test(u) ? u : 'https://' + u;
@@ -141,7 +145,7 @@ async function viewFeed() {
   app.innerHTML = '<h2>Feed</h2><div class="grid" id="g"></div><p id="m" class="mut"></p><button id="more" class="sec" hidden>Load more</button>';
   const saved = await savedIds(); let from = 0; const N = 24;
   const load = async () => {
-    const { data, error } = await sb.from('tattoos').select('*, profiles(id, display_name)').order('created_at', { ascending: false }).range(from, from + N - 1);
+    const { data, error } = await sb.from('tattoos').select('*, profiles!artist_id(id, display_name)').order('created_at', { ascending: false }).range(from, from + N - 1);
     if (error) return $('#m').textContent = error.message;
     if (!from && !data.length) $('#m').textContent = 'No tattoos yet.';
     $('#g').insertAdjacentHTML('beforeend', data.map(t => card(t, saved.has(t.id))).join(''));
@@ -151,14 +155,14 @@ async function viewFeed() {
 }
 
 async function viewSaved() {
-  const { data, error } = await sb.from('saves').select('created_at, tattoos(*, profiles(id, display_name))').order('created_at', { ascending: false });
+  const { data, error } = await sb.from('saves').select('created_at, tattoos(*, profiles!artist_id(id, display_name))').order('created_at', { ascending: false });
   if (error) return app.innerHTML = `<p class="err">${esc(error.message)}</p>`;
   const rows = (data || []).filter(r => r.tattoos);
   app.innerHTML = '<h2>Saved</h2>' + (rows.length ? `<div class="grid">${rows.map(r => card(r.tattoos, true)).join('')}</div>` : '<p class="mut">Nothing saved yet. Tap Save on any tattoo in your feed.</p>');
 }
 
 async function viewTattoo(id) {
-  const { data: t } = await sb.from('tattoos').select('*, profiles(id, display_name)').eq('id', id).single();
+  const { data: t } = await sb.from('tattoos').select('*, profiles!artist_id(id, display_name)').eq('id', id).single();
   if (!t) return app.innerHTML = '<p>Tattoo not found.</p>';
   const saved = (await savedIds()).has(t.id);
   app.innerHTML = `<div class="big"><img src="${esc(t.image_url)}" alt="${esc(t.title)}"><div class="row" style="margin:12px 0"><h2 style="margin:0">${esc(t.title)}</h2>
@@ -170,7 +174,7 @@ async function viewArtist(id) {
   const { data: p } = await sb.from('profiles').select('*').eq('id', id).single();
   if (!p || p.role !== 'artist') return app.innerHTML = '<p>Artist not found.</p>';
   if (p.id !== me.id) sb.from('profile_views').insert({ artist_id: p.id, viewer_id: me.id }).then(() => {});
-  const { data: ts } = await sb.from('tattoos').select('*, profiles(id, display_name)').eq('artist_id', id).order('created_at', { ascending: false });
+  const { data: ts } = await sb.from('tattoos').select('*, profiles!artist_id(id, display_name)').eq('artist_id', id).order('created_at', { ascending: false });
   const saved = await savedIds();
   app.innerHTML = `<div class="head">${avatar(p)}<div><h2 style="margin:0">${esc(p.display_name)}</h2><div class="mut">${esc(p.location)}</div>
   ${p.instagram_url ? `<a class="mut" href="${esc(url(p.instagram_url))}" target="_blank" rel="noopener">Instagram</a>` : ''}</div></div>
