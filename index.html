@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InkBoard</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#6b6b6b;--card:#f5f5f4;--line:#e2e2df;--acc:#111;--accfg:#fff;--err:#b00020}
+@media(prefers-color-scheme:dark){:root{--bg:#121212;--fg:#f0f0f0;--mut:#9a9a9a;--card:#1e1e1e;--line:#2c2c2c;--acc:#f0f0f0;--accfg:#111;--err:#ff6b6b}}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+a{color:inherit}
+#nav{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:16px;padding:12px 20px;background:var(--bg);border-bottom:1px solid var(--line)}
+.brand{font-weight:800;text-decoration:none;font-size:20px}
+.tabs{display:flex;gap:4px;flex:1}
+.tabs a{padding:6px 12px;border-radius:99px;text-decoration:none;color:var(--mut)}
+.tabs a.on{background:var(--acc);color:var(--accfg)}
+main{max-width:1100px;margin:0 auto;padding:20px}
+.box{max-width:420px;margin:30px auto}
+.box form,label{display:flex;flex-direction:column;gap:6px}
+.box form{gap:12px}
+label{font-size:14px;color:var(--mut)}
+input,textarea{font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);width:100%}
+textarea{min-height:80px;resize:vertical}
+button{font:inherit;padding:10px 16px;border:0;border-radius:8px;background:var(--acc);color:var(--accfg);cursor:pointer}
+button.sec{background:var(--card);color:var(--fg);border:1px solid var(--line)}
+.grid{column-width:240px;column-gap:14px}
+.card{break-inside:avoid;margin-bottom:14px;background:var(--card);border-radius:12px;overflow:hidden}
+.card img{display:block;width:100%}
+.cb{padding:10px 12px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.mut{color:var(--mut);font-size:14px}
+.sv{padding:5px 12px;font-size:14px;background:var(--card);color:var(--fg);border:1px solid var(--line)}
+.sv.on{background:var(--acc);color:var(--accfg)}
+.err{color:var(--err);margin:0}
+.av{width:72px;height:72px;border-radius:50%;background:var(--line);display:inline-flex;align-items:center;justify-content:center;font-size:28px;overflow:hidden;flex:none}
+.av img{width:100%;height:100%;object-fit:cover}
+.stat{display:inline-block;margin:0 16px 16px 0;padding:20px 28px;background:var(--card);border-radius:12px}
+.stat b{display:block;font-size:40px}
+.big{max-width:720px;margin:0 auto}.big img{width:100%;border-radius:12px}
+.radios{display:flex;gap:16px;flex-direction:row}.radios label{flex-direction:row;align-items:center;color:var(--fg)}.radios input{width:auto}
+.head{display:flex;gap:16px;align-items:center;margin-bottom:20px}
+</style>
+</head>
+<body>
+<div id="nav"></div>
+<main id="app"></main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+// 1) PASTE YOUR SUPABASE VALUES HERE (Project Settings > API)
+const SUPABASE_URL = 'PASTE_YOUR_PROJECT_URL';
+const SUPABASE_ANON_KEY = 'PASTE_YOUR_ANON_PUBLIC_KEY';
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = s => document.querySelector(s), app = $('#app'), nav = $('#nav');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const url = u => /^https?:\/\//i.test(u) ? u : 'https://' + u;
+const TABS = {
+  user: [['feed','Feed'],['saved','Saved'],['profile','Profile']],
+  artist: [['uploads','Uploads'],['stats','Stats'],['profile','Profile']]
+};
+let me = null;
+
+const avatar = p => `<span class="av">${p.avatar_url ? `<img src="${esc(p.avatar_url)}" alt="">` : esc((p.display_name || '?')[0].toUpperCase())}</span>`;
+
+async function up(bucket, file) {
+  const ext = {'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[file.type];
+  if (!ext) throw new Error('Use a JPG, PNG, or WebP image.');
+  if (file.size > 5242880) throw new Error('Image must be under 5 MB.');
+  const path = `${me.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await sb.storage.from(bucket).upload(path, file, { contentType: file.type });
+  if (error) throw error;
+  return { path, url: sb.storage.from(bucket).getPublicUrl(path).data.publicUrl };
+}
+
+function card(t, saved) {
+  const a = t.profiles || {};
+  return `<div class="card"><a href="#/tattoo/${t.id}"><img loading="lazy" src="${esc(t.image_url)}" alt="${esc(t.title)}"></a>
+  <div class="cb"><b>${esc(t.title)}</b><div class="row"><a class="mut" href="#/artist/${a.id}">${esc(a.display_name)}</a>
+  ${me.role === 'user' ? `<button class="sv ${saved ? 'on' : ''}" data-save="${t.id}">${saved ? 'Saved' : 'Save'}</button>` : ''}</div></div></div>`;
+}
+
+async function savedIds() {
+  if (me.role !== 'user') return new Set();
+  const { data } = await sb.from('saves').select('tattoo_id');
+  return new Set((data || []).map(x => x.tattoo_id));
+}
+
+// ---------- Router ----------
+async function route() {
+  if (SUPABASE_URL.includes('PASTE')) { app.innerHTML = '<div class="box"><h2>Setup needed</h2><p>Open index.html in a text editor and paste your Supabase URL and anon key at the top of the script.</p></div>'; return; }
+  let [page, id] = location.hash.replace(/^#\/?/, '').split('/');
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { me = null; renderNav(); return page === 'signup' ? viewSignup() : viewLogin(); }
+  if (!me) {
+    const { data } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
+    me = data;
+  }
+  if (!me) { app.innerHTML = '<p class="err">Could not load your profile. Did you run supabase-setup.sql?</p>'; return; }
+  const home = me.role === 'artist' ? 'uploads' : 'feed';
+  const allowed = [...TABS[me.role].map(t => t[0]), 'tattoo', 'artist'];
+  if (!allowed.includes(page)) { page = home; history.replaceState(null, '', '#/' + home); }
+  renderNav(page);
+  app.innerHTML = '<p class="mut">Loading...</p>';
+  const views = { feed: viewFeed, saved: viewSaved, profile: viewProfile, uploads: viewUploads, stats: viewStats, tattoo: () => viewTattoo(id), artist: () => viewArtist(id) };
+  await views[page]();
+}
+
+function renderNav(page) {
+  nav.innerHTML = `<a class="brand" href="#/">InkBoard</a>` + (me ? `<div class="tabs">${TABS[me.role].map(([k, l]) => `<a href="#/${k}" class="${k === page ? 'on' : ''}">${l}</a>`).join('')}</div><button id="out" class="sec">Log out</button>` : '');
+  if (me) $('#out').onclick = async () => { await sb.auth.signOut(); me = null; history.replaceState(null, '', '#/login'); route(); };
+}
+
+// ---------- Auth ----------
+function viewLogin() {
+  app.innerHTML = `<div class="box"><h2>Log in</h2><form id="f"><input name="email" type="email" placeholder="Email" required><input name="password" type="password" placeholder="Password" required><button>Log in</button><p class="err" id="err"></p></form><p class="mut">No account? <a href="#/signup">Sign up</a></p></div>`;
+  $('#f').onsubmit = async e => {
+    e.preventDefault(); const f = new FormData(e.target);
+    const { error } = await sb.auth.signInWithPassword({ email: f.get('email'), password: f.get('password') });
+    if (error) return $('#err').textContent = error.message;
+    me = null; history.replaceState(null, '', '#/'); route();
+  };
+}
+
+function viewSignup() {
+  app.innerHTML = `<div class="box"><h2>Create account</h2><form id="f"><input name="name" placeholder="Display name" required><input name="email" type="email" placeholder="Email" required><input name="password" type="password" placeholder="Password (6+ characters)" minlength="6" required>
+  <div class="radios"><label><input type="radio" name="role" value="user" checked> I am a user</label><label><input type="radio" name="role" value="artist"> I am a tattoo artist</label></div>
+  <button>Sign up</button><p class="err" id="err"></p></form><p class="mut">Have an account? <a href="#/login">Log in</a></p></div>`;
+  $('#f').onsubmit = async e => {
+    e.preventDefault(); const f = new FormData(e.target);
+    const { data, error } = await sb.auth.signUp({ email: f.get('email'), password: f.get('password'), options: { data: { display_name: f.get('name'), role: f.get('role') } } });
+    if (error) return $('#err').textContent = error.message;
+    if (!data.session) return $('#err').textContent = 'Check your email to confirm your account, then log in.';
+    me = null; history.replaceState(null, '', '#/'); route();
+  };
+}
+
+// ---------- User views ----------
+async function viewFeed() {
+  app.innerHTML = '<h2>Feed</h2><div class="grid" id="g"></div><p id="m" class="mut"></p><button id="more" class="sec" hidden>Load more</button>';
+  const saved = await savedIds(); let from = 0; const N = 24;
+  const load = async () => {
+    const { data, error } = await sb.from('tattoos').select('*, profiles(id, display_name)').order('created_at', { ascending: false }).range(from, from + N - 1);
+    if (error) return $('#m').textContent = error.message;
+    if (!from && !data.length) $('#m').textContent = 'No tattoos yet.';
+    $('#g').insertAdjacentHTML('beforeend', data.map(t => card(t, saved.has(t.id))).join(''));
+    from += N; $('#more').hidden = data.length < N;
+  };
+  $('#more').onclick = load; await load();
+}
+
+async function viewSaved() {
+  const { data, error } = await sb.from('saves').select('created_at, tattoos(*, profiles(id, display_name))').order('created_at', { ascending: false });
+  if (error) return app.innerHTML = `<p class="err">${esc(error.message)}</p>`;
+  const rows = (data || []).filter(r => r.tattoos);
+  app.innerHTML = '<h2>Saved</h2>' + (rows.length ? `<div class="grid">${rows.map(r => card(r.tattoos, true)).join('')}</div>` : '<p class="mut">Nothing saved yet. Tap Save on any tattoo in your feed.</p>');
+}
+
+async function viewTattoo(id) {
+  const { data: t } = await sb.from('tattoos').select('*, profiles(id, display_name)').eq('id', id).single();
+  if (!t) return app.innerHTML = '<p>Tattoo not found.</p>';
+  const saved = (await savedIds()).has(t.id);
+  app.innerHTML = `<div class="big"><img src="${esc(t.image_url)}" alt="${esc(t.title)}"><div class="row" style="margin:12px 0"><h2 style="margin:0">${esc(t.title)}</h2>
+  ${me.role === 'user' ? `<button class="sv ${saved ? 'on' : ''}" data-save="${t.id}">${saved ? 'Saved' : 'Save'}</button>` : ''}</div>
+  <p>By <a href="#/artist/${t.profiles.id}">${esc(t.profiles.display_name)}</a></p><p>${esc(t.description)}</p></div>`;
+}
+
+async function viewArtist(id) {
+  const { data: p } = await sb.from('profiles').select('*').eq('id', id).single();
+  if (!p || p.role !== 'artist') return app.innerHTML = '<p>Artist not found.</p>';
+  if (p.id !== me.id) sb.from('profile_views').insert({ artist_id: p.id, viewer_id: me.id }).then(() => {});
+  const { data: ts } = await sb.from('tattoos').select('*, profiles(id, display_name)').eq('artist_id', id).order('created_at', { ascending: false });
+  const saved = await savedIds();
+  app.innerHTML = `<div class="head">${avatar(p)}<div><h2 style="margin:0">${esc(p.display_name)}</h2><div class="mut">${esc(p.location)}</div>
+  ${p.instagram_url ? `<a class="mut" href="${esc(url(p.instagram_url))}" target="_blank" rel="noopener">Instagram</a>` : ''}</div></div>
+  <p>${esc(p.bio)}</p>${ts.length ? `<div class="grid">${ts.map(t => card(t, saved.has(t.id))).join('')}</div>` : '<p class="mut">No tattoos posted yet.</p>'}`;
+}
+
+// ---------- Artist views ----------
+async function viewUploads() {
+  const { data: ts } = await sb.from('tattoos').select('*').eq('artist_id', me.id).order('created_at', { ascending: false });
+  app.innerHTML = `<h2>Uploads</h2><form id="f" class="box" style="margin:0 0 24px;display:flex;flex-direction:column;gap:12px"><input type="file" name="image" accept="image/jpeg,image/png,image/webp" required><input name="title" placeholder="Title" required><textarea name="description" placeholder="Description"></textarea><button>Post tattoo</button><p class="err" id="err"></p></form>
+  ${ts.length ? `<div class="grid">${ts.map(t => `<div class="card"><img loading="lazy" src="${esc(t.image_url)}" alt="${esc(t.title)}"><div class="cb"><div class="row"><b>${esc(t.title)}</b><button class="sec" data-del="${t.id}" data-path="${esc(t.image_path)}">Delete</button></div></div></div>`).join('')}</div>` : '<p class="mut">No uploads yet.</p>'}`;
+  $('#f').onsubmit = async e => {
+    e.preventDefault(); const f = new FormData(e.target); $('#err').textContent = 'Uploading...';
+    try {
+      const img = await up('tattoos', f.get('image'));
+      const { error } = await sb.from('tattoos').insert({ artist_id: me.id, title: f.get('title'), description: f.get('description'), image_url: img.url, image_path: img.path });
+      if (error) throw error;
+      viewUploads();
+    } catch (x) { $('#err').textContent = x.message; }
+  };
+}
+
+async function viewStats() {
+  const { data, error } = await sb.rpc('artist_stats');
+  if (error) return app.innerHTML = `<p class="err">${esc(error.message)}</p>`;
+  const s = data[0] || {};
+  app.innerHTML = `<h2>Stats</h2><div class="stat"><b>${s.total_views ?? 0}</b>Total profile views</div><div class="stat"><b>${s.total_saves ?? 0}</b>Total saves</div>`;
+}
+
+// ---------- Profile (both roles) ----------
+function viewProfile() {
+  const a = me.role === 'artist';
+  app.innerHTML = `<div class="box"><h2>Profile</h2><form id="f"><div class="row" style="justify-content:flex-start">${avatar(me)}<input type="file" name="avatar" accept="image/jpeg,image/png,image/webp"></div>
+  <label>Display name<input name="display_name" value="${esc(me.display_name)}" required></label>
+  ${a ? `<label>Bio<textarea name="bio">${esc(me.bio)}</textarea></label><label>Location / studio<input name="location" value="${esc(me.location)}"></label><label>Instagram link<input name="instagram_url" value="${esc(me.instagram_url)}" placeholder="https://instagram.com/yourname"></label>` : ''}
+  <button>Save changes</button><p id="msg" class="mut"></p></form></div>`;
+  $('#f').onsubmit = async e => {
+    e.preventDefault(); const f = new FormData(e.target); $('#msg').textContent = 'Saving...';
+    try {
+      const upd = { display_name: f.get('display_name') };
+      if (a) Object.assign(upd, { bio: f.get('bio'), location: f.get('location'), instagram_url: f.get('instagram_url') });
+      const file = f.get('avatar');
+      if (file && file.size) upd.avatar_url = (await up('avatars', file)).url;
+      const { data, error } = await sb.from('profiles').update(upd).eq('id', me.id).select().single();
+      if (error) throw error;
+      me = data; viewProfile(); $('#msg').textContent = 'Saved.';
+    } catch (x) { $('#msg').textContent = x.message; }
+  };
+}
+
+// ---------- Save / delete clicks ----------
+app.onclick = async e => {
+  const s = e.target.closest('[data-save]');
+  if (s) {
+    const id = s.dataset.save, on = s.classList.contains('on');
+    const r = on ? await sb.from('saves').delete().match({ user_id: me.id, tattoo_id: id }) : await sb.from('saves').insert({ user_id: me.id, tattoo_id: id });
+    if (r.error) return alert(r.error.message);
+    s.classList.toggle('on', !on); s.textContent = on ? 'Save' : 'Saved';
+    if (on && location.hash === '#/saved') s.closest('.card').remove();
+  }
+  const d = e.target.closest('[data-del]');
+  if (d && confirm('Delete this tattoo?')) {
+    await sb.storage.from('tattoos').remove([d.dataset.path]);
+    const { error } = await sb.from('tattoos').delete().eq('id', d.dataset.del);
+    if (error) return alert(error.message);
+    d.closest('.card').remove();
+  }
+};
+
+window.addEventListener('hashchange', route);
+route();
+</script>
+</body>
+</html>
